@@ -565,6 +565,16 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 	return total, nil
 }
 
+// escapeAuditLikePattern 转义 LIKE 模式中的特殊字符（与 applyExplicitLogTextFilter
+// 一致使用 ! 作为 ESCAPE 字符），防止 direction/level 用户输入中的 % _ 改变匹配语义。
+// 注意 ESCAPE 字符自身必须先转义，否则会被当作普通字符处理后被攻击者利用。
+func escapeAuditLikePattern(input string) string {
+	input = strings.ReplaceAll(input, "!", "!!")
+	input = strings.ReplaceAll(input, "%", "!%")
+	input = strings.ReplaceAll(input, "_", "!_")
+	return input
+}
+
 // GetAuditLogs 查询审计日志（管理员：可查看所有 group）
 func GetAuditLogs(startTimestamp int64, endTimestamp int64, username string, direction string, level string, group string, startIdx int, num int) (logs []*Log, total int64, err error) {
 	tx := LOG_DB.Where("logs.type = ?", LogTypeAudit)
@@ -584,10 +594,10 @@ func GetAuditLogs(startTimestamp int64, endTimestamp int64, username string, dir
 
 	// direction 和 level 存储在 Other JSON 中，使用 LIKE 过滤
 	if direction != "" {
-		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"direction\":\"%s\"%%", direction))
+		tx = tx.Where("logs.other LIKE ? ESCAPE '!'", fmt.Sprintf("%%\"direction\":\"%s\"%%", escapeAuditLikePattern(direction)))
 	}
 	if level != "" {
-		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"rule_level\":\"%s\"%%", level))
+		tx = tx.Where("logs.other LIKE ? ESCAPE '!'", fmt.Sprintf("%%\"rule_level\":\"%s\"%%", escapeAuditLikePattern(level)))
 	}
 
 	err = tx.Model(&Log{}).Count(&total).Error
@@ -602,11 +612,12 @@ func GetAuditLogs(startTimestamp int64, endTimestamp int64, username string, dir
 func GetAuditLogsByUser(userId int, startTimestamp int64, endTimestamp int64, direction string, level string, startIdx int, num int) (logs []*Log, total int64, err error) {
 	// 获取用户的 group
 	userGroup, _ := GetUserGroup(userId, false)
-
-	tx := LOG_DB.Where("logs.type = ?", LogTypeAudit)
-	if userGroup != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", userGroup)
+	// 用户未分配 group 时，跨 group 审计日志对其无意义且属于越权读取，直接返回空集
+	if userGroup == "" {
+		return nil, 0, nil
 	}
+
+	tx := LOG_DB.Where("logs.type = ? and logs."+logGroupCol+" = ?", LogTypeAudit, userGroup)
 
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
@@ -616,10 +627,10 @@ func GetAuditLogsByUser(userId int, startTimestamp int64, endTimestamp int64, di
 	}
 
 	if direction != "" {
-		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"direction\":\"%s\"%%", direction))
+		tx = tx.Where("logs.other LIKE ? ESCAPE '!'", fmt.Sprintf("%%\"direction\":\"%s\"%%", escapeAuditLikePattern(direction)))
 	}
 	if level != "" {
-		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"rule_level\":\"%s\"%%", level))
+		tx = tx.Where("logs.other LIKE ? ESCAPE '!'", fmt.Sprintf("%%\"rule_level\":\"%s\"%%", escapeAuditLikePattern(level)))
 	}
 
 	err = tx.Model(&Log{}).Count(&total).Error

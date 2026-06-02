@@ -145,6 +145,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			requestId := c.GetString(common.RequestIdKey)
 			tokenName := c.GetString("token_name")
 			modelName := relayInfo.OriginModelName
+			// 审计场景必须能溯源，与 RecordConsumeLog / RecordErrorLog 行为对齐
+			needRecordIp := false
+			if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
+				needRecordIp = true
+			}
 			auditDetail := model.AuditLogDetail{
 				Direction:      "input",
 				SensitiveWords: words,
@@ -158,12 +163,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				Username:  username,
 				CreatedAt: common.GetTimestamp(),
 				Type:      model.LogTypeAudit,
-				Content:   fmt.Sprintf("sensitive words detected: %s", strings.Join(words, ", ")),
+				Content:   "sensitive words detected",
 				TokenName: tokenName,
 				ModelName: modelName,
 				Group:     userGroup,
+				Ip: func() string {
+					if needRecordIp {
+						return c.ClientIP()
+					}
+					return ""
+				}(),
 				RequestId: requestId,
-				Other:     common.MapToJsonStr(map[string]interface{}{}),
 			}
 			// 将 auditDetail 序列化到 Other 字段
 			if detailBytes, err := common.Marshal(auditDetail); err == nil {
@@ -171,7 +181,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 			service.RecordAuditLog(auditLog)
 
-			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
+			newAPIError = types.NewError(errors.New("sensitive words detected"), types.ErrorCodeSensitiveWordsDetected)
 			return
 		}
 	}
