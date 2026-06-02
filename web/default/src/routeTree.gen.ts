@@ -48,11 +48,13 @@ import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
+import { Route as AuthenticatedAuditLogsIndexRouteImport } from './routes/_authenticated/audit-logs/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
+import { Route as AuthenticatedAuditLogsSectionRouteImport } from './routes/_authenticated/audit-logs/$section'
 import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
 import { Route as AuthenticatedSystemSettingsSiteIndexRouteImport } from './routes/_authenticated/system-settings/site/index'
 import { Route as AuthenticatedSystemSettingsSecurityIndexRouteImport } from './routes/_authenticated/system-settings/security/index'
@@ -273,6 +275,12 @@ const AuthenticatedChannelsIndexRoute =
     path: '/channels/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAuditLogsIndexRoute =
+  AuthenticatedAuditLogsIndexRouteImport.update({
+    id: '/audit-logs/',
+    path: '/audit-logs/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsageLogsSectionRoute =
   AuthenticatedUsageLogsSectionRouteImport.update({
     id: '/usage-logs/$section',
@@ -302,6 +310,12 @@ const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdRouteImport.update({
   path: '/chat/$chatId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAuditLogsSectionRoute =
+  AuthenticatedAuditLogsSectionRouteImport.update({
+    id: '/audit-logs/$section',
+    path: '/audit-logs/$section',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const authUserResetRoute = authUserResetRouteImport.update({
   id: '/user/reset',
   path: '/user/reset',
@@ -418,11 +432,13 @@ export interface FileRoutesByFullPath {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/audit-logs/$section': typeof AuthenticatedAuditLogsSectionRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
+  '/audit-logs/': typeof AuthenticatedAuditLogsIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -476,11 +492,13 @@ export interface FileRoutesByTo {
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/audit-logs/$section': typeof AuthenticatedAuditLogsSectionRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -538,11 +556,13 @@ export interface FileRoutesById {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/(auth)/user/reset': typeof authUserResetRoute
+  '/_authenticated/audit-logs/$section': typeof AuthenticatedAuditLogsSectionRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
+  '/_authenticated/audit-logs/': typeof AuthenticatedAuditLogsIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -599,11 +619,13 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/user/reset'
+    | '/audit-logs/$section'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
     | '/usage-logs/$section'
+    | '/audit-logs/'
     | '/channels/'
     | '/dashboard/'
     | '/keys/'
@@ -657,11 +679,13 @@ export interface FileRouteTypes {
     | '/rankings'
     | '/setup'
     | '/user/reset'
+    | '/audit-logs/$section'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
     | '/usage-logs/$section'
+    | '/audit-logs'
     | '/channels'
     | '/dashboard'
     | '/keys'
@@ -718,11 +742,13 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/(auth)/user/reset'
+    | '/_authenticated/audit-logs/$section'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
+    | '/_authenticated/audit-logs/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/keys/'
@@ -1048,6 +1074,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChannelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/audit-logs/': {
+      id: '/_authenticated/audit-logs/'
+      path: '/audit-logs'
+      fullPath: '/audit-logs/'
+      preLoaderRoute: typeof AuthenticatedAuditLogsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/usage-logs/$section': {
       id: '/_authenticated/usage-logs/$section'
       path: '/usage-logs/$section'
@@ -1081,6 +1114,13 @@ declare module '@tanstack/react-router' {
       path: '/chat/$chatId'
       fullPath: '/chat/$chatId'
       preLoaderRoute: typeof AuthenticatedChatChatIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audit-logs/$section': {
+      id: '/_authenticated/audit-logs/$section'
+      path: '/audit-logs/$section'
+      fullPath: '/audit-logs/$section'
+      preLoaderRoute: typeof AuthenticatedAuditLogsSectionRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/(auth)/user/reset': {
@@ -1277,11 +1317,13 @@ const AuthenticatedSystemSettingsRouteRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSystemSettingsRouteRoute: typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   AuthenticatedChat2linkRoute: typeof AuthenticatedChat2linkRoute
+  AuthenticatedAuditLogsSectionRoute: typeof AuthenticatedAuditLogsSectionRoute
   AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
+  AuthenticatedAuditLogsIndexRoute: typeof AuthenticatedAuditLogsIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -1299,11 +1341,13 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSystemSettingsRouteRoute:
     AuthenticatedSystemSettingsRouteRouteWithChildren,
   AuthenticatedChat2linkRoute: AuthenticatedChat2linkRoute,
+  AuthenticatedAuditLogsSectionRoute: AuthenticatedAuditLogsSectionRoute,
   AuthenticatedChatChatIdRoute: AuthenticatedChatChatIdRoute,
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
+  AuthenticatedAuditLogsIndexRoute: AuthenticatedAuditLogsIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
