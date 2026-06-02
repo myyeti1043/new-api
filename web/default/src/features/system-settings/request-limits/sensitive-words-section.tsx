@@ -44,6 +44,7 @@ import { useUpdateOption } from '../hooks/use-update-option'
 const sensitiveSchema = z.object({
   CheckSensitiveEnabled: z.boolean(),
   CheckSensitiveOnPromptEnabled: z.boolean(),
+  CheckSensitiveOnCompletionEnabled: z.boolean(),
   SensitiveWords: z.string().optional(),
 })
 
@@ -121,6 +122,29 @@ export function SensitiveWordsSection({
                     <FormDescription>
                       {t(
                         'When enabled, prompts are scanned before reaching upstream models.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='CheckSensitiveOnCompletionEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Inspect model responses')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'When enabled, model responses are scanned for sensitive words after completion.'
                       )}
                     </FormDescription>
                   </SettingsSwitchContent>

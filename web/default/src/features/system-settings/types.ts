@@ -315,7 +315,15 @@ export type SecuritySettings = {
   ModelRequestRateLimitGroup: string
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
+  CheckSensitiveOnCompletionEnabled: boolean
   SensitiveWords: string
+  PIIConfig?: {
+    enabled: boolean
+    input_action: string
+    output_action: string
+    audit_log_enabled: boolean
+    types: Record<string, { enabled: boolean; action: string }>
+  }
   'fetch_setting.enable_ssrf_protection': boolean
   'fetch_setting.allow_private_ip': boolean
   'fetch_setting.domain_filter_mode': boolean

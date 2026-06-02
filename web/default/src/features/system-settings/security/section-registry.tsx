@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SensitiveWordsSection } from '../request-limits/sensitive-words-section'
+import { SensitiveRuleEditor } from '../request-limits/sensitive-rule-editor'
+import { PIIConfigSection } from '../request-limits/pii-config-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
 import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
@@ -48,8 +50,37 @@ const SECURITY_SECTIONS = [
         defaultValues={{
           CheckSensitiveEnabled: settings.CheckSensitiveEnabled,
           CheckSensitiveOnPromptEnabled: settings.CheckSensitiveOnPromptEnabled,
+          CheckSensitiveOnCompletionEnabled: settings.CheckSensitiveOnCompletionEnabled,
           SensitiveWords: settings.SensitiveWords,
         }}
+      />
+    ),
+  },
+  {
+    id: 'sensitive-rules',
+    titleKey: 'Sensitive Rules',
+    build: () => <SensitiveRuleEditor />,
+  },
+  {
+    id: 'pii-config',
+    titleKey: 'PII Detection',
+    build: (settings: SecuritySettings) => (
+      <PIIConfigSection
+        defaultValues={
+          settings.PIIConfig || {
+            enabled: false,
+            input_action: 'mask',
+            output_action: 'mask',
+            audit_log_enabled: true,
+            types: {
+              phone: { enabled: true, action: 'mask' },
+              idcard: { enabled: true, action: 'mask' },
+              bankcard: { enabled: true, action: 'mask' },
+              email: { enabled: false, action: 'log' },
+              ipv4: { enabled: false, action: 'log' },
+            },
+          }
+        }
       />
     ),
   },
