@@ -179,6 +179,9 @@ type RelayInfo struct {
 
 	StreamStatus *StreamStatus
 
+	// OutputResponseText 用于各 handler 累积完整响应文本，供输出端敏感词/PII 检查使用
+	OutputResponseText strings.Builder
+
 	ThinkingContentInfo
 	TokenCountMeta
 	*ClaudeConvertInfo
