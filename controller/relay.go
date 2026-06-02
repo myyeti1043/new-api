@@ -134,9 +134,26 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	if needSensitiveCheck && meta != nil {
-		contains, words := service.CheckSensitiveText(meta.CombineText)
-		if contains {
+		hits := service.CheckSensitiveTextWithLevel(meta.CombineText, relayInfo.TokenGroup)
+		if len(hits) > 0 {
+			// 提取所有命中的词
+			words := make([]string, 0, len(hits))
+			for _, hit := range hits {
+				words = append(words, hit.Word)
+			}
 			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
+
+			// 判断最高级别
+			hasBlock := false
+			maxLevel := "log"
+			for _, hit := range hits {
+				if hit.Level == "block" {
+					hasBlock = true
+					maxLevel = "block"
+				} else if hit.Level == "warn" && maxLevel != "block" {
+					maxLevel = "warn"
+				}
+			}
 
 			// 记录审计日志（异步，不阻塞请求）
 			userId := c.GetInt("id")
@@ -145,7 +162,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			requestId := c.GetString(common.RequestIdKey)
 			tokenName := c.GetString("token_name")
 			modelName := relayInfo.OriginModelName
-			// 审计场景必须能溯源，与 RecordConsumeLog / RecordErrorLog 行为对齐
 			needRecordIp := false
 			if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
 				needRecordIp = true
@@ -153,10 +169,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			auditDetail := model.AuditLogDetail{
 				Direction:      "input",
 				SensitiveWords: words,
-				Action:         "blocked",
+				Action: func() string {
+					if hasBlock {
+						return "blocked"
+					}
+					return "warned"
+				}(),
 				ContentPreview: truncateAndMaskContent(meta.CombineText, 200),
-				RuleLevel:      "block",
-				Category:       "custom",
+				RuleLevel:      maxLevel,
+				Category:       hits[0].Category,
 			}
 			auditLog := &model.Log{
 				UserId:    userId,
@@ -175,14 +196,86 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				}(),
 				RequestId: requestId,
 			}
-			// 将 auditDetail 序列化到 Other 字段
 			if detailBytes, err := common.Marshal(auditDetail); err == nil {
 				auditLog.Other = string(detailBytes)
 			}
 			service.RecordAuditLog(auditLog)
 
-			newAPIError = types.NewError(errors.New("sensitive words detected"), types.ErrorCodeSensitiveWordsDetected)
-			return
+			// block 级别阻断请求
+			if hasBlock {
+				newAPIError = types.NewError(errors.New("sensitive words detected"), types.ErrorCodeSensitiveWordsDetected)
+				return
+			}
+		}
+	}
+
+	// 输入端 PII 检查
+	if setting.PIIConfig.Enabled && meta != nil && meta.CombineText != "" {
+		enabledTypes := setting.GetEnabledPIITypes()
+		if len(enabledTypes) > 0 {
+			findings := service.CheckPIIText(meta.CombineText, enabledTypes)
+			if len(findings) > 0 {
+				// 记录审计日志
+				piiTypes := make([]string, 0, len(findings))
+				for _, f := range findings {
+					piiTypes = append(piiTypes, f.Type)
+				}
+				logger.LogWarn(c, fmt.Sprintf("PII detected in input: %s", strings.Join(piiTypes, ", ")))
+
+				if setting.PIIConfig.AuditLogEnabled {
+					userId := c.GetInt("id")
+					username := c.GetString("username")
+					userGroup := c.GetString("group")
+					requestId := c.GetString(common.RequestIdKey)
+					tokenName := c.GetString("token_name")
+					modelName := relayInfo.OriginModelName
+					needRecordIp := false
+					if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
+						needRecordIp = true
+					}
+					auditDetail := model.AuditLogDetail{
+						Direction:      "input",
+						SensitiveWords: piiTypes,
+						Action: func() string {
+							if setting.PIIConfig.InputAction == "block" {
+								return "blocked"
+							}
+							return "masked"
+						}(),
+						ContentPreview: truncateAndMaskContent(meta.CombineText, 200),
+						RuleLevel:      setting.PIIConfig.InputAction,
+						Category:       "pii",
+					}
+					auditLog := &model.Log{
+						UserId:    userId,
+						Username:  username,
+						CreatedAt: common.GetTimestamp(),
+						Type:      model.LogTypeAudit,
+						Content:   "PII detected in input",
+						TokenName: tokenName,
+						ModelName: modelName,
+						Group:     userGroup,
+						Ip: func() string {
+							if needRecordIp {
+								return c.ClientIP()
+							}
+							return ""
+						}(),
+						RequestId: requestId,
+					}
+					if detailBytes, err := common.Marshal(auditDetail); err == nil {
+						auditLog.Other = string(detailBytes)
+					}
+					service.RecordAuditLog(auditLog)
+				}
+
+				// block 级别阻断请求
+				if setting.PIIConfig.InputAction == "block" {
+					newAPIError = types.NewError(errors.New("PII detected in input"), types.ErrorCodeSensitiveWordsDetected)
+					return
+				}
+				// mask 级别：将 PII 脱敏后替换请求文本（此处仅记录，实际脱敏在 service 层处理）
+			}
 		}
 	}
 
@@ -266,6 +359,158 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+
+			// 输出端敏感词检查
+			if setting.ShouldCheckCompletionSensitive() {
+				outputText := relayInfo.OutputResponseText.String()
+				if outputText != "" {
+					hits := service.CheckSensitiveTextWithLevel(outputText, relayInfo.TokenGroup)
+					if len(hits) > 0 {
+						words := make([]string, 0, len(hits))
+						for _, hit := range hits {
+							words = append(words, hit.Word)
+						}
+						logger.LogWarn(c, fmt.Sprintf("output sensitive words detected: %s", strings.Join(words, ", ")))
+
+						// 判断最高级别
+						hasBlock := false
+						maxLevel := "log"
+						for _, hit := range hits {
+							if hit.Level == "block" {
+								hasBlock = true
+								maxLevel = "block"
+							} else if hit.Level == "warn" && maxLevel != "block" {
+								maxLevel = "warn"
+							}
+						}
+
+						// 记录审计日志
+						userId := c.GetInt("id")
+						username := c.GetString("username")
+						userGroup := c.GetString("group")
+						requestId := c.GetString(common.RequestIdKey)
+						tokenName := c.GetString("token_name")
+						modelName := relayInfo.OriginModelName
+						needRecordIp := false
+						if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
+							needRecordIp = true
+						}
+						auditDetail := model.AuditLogDetail{
+							Direction:      "output",
+							SensitiveWords: words,
+							Action: func() string {
+								if hasBlock {
+									return "blocked"
+								}
+								return "warned"
+							}(),
+							ContentPreview: truncateAndMaskContent(outputText, 200),
+							RuleLevel:      maxLevel,
+							Category:       hits[0].Category,
+						}
+						auditLog := &model.Log{
+							UserId:    userId,
+							Username:  username,
+							CreatedAt: common.GetTimestamp(),
+							Type:      model.LogTypeAudit,
+							Content:   "output sensitive words detected",
+							TokenName: tokenName,
+							ModelName: modelName,
+							Group:     userGroup,
+							Ip: func() string {
+								if needRecordIp {
+									return c.ClientIP()
+								}
+								return ""
+							}(),
+							RequestId: requestId,
+						}
+						if detailBytes, err := common.Marshal(auditDetail); err == nil {
+							auditLog.Other = string(detailBytes)
+						}
+						service.RecordAuditLog(auditLog)
+
+						// 非流式请求且 block 级别时返回错误
+						if hasBlock && !relayInfo.IsStream {
+							newAPIError = types.NewError(errors.New("output sensitive words detected"), types.ErrorCodeSensitiveWordsDetected)
+							return
+						}
+						// 流式请求或 warn/log 级别仅记录日志
+					}
+				}
+			}
+
+			// 输出端 PII 检查
+			if setting.PIIConfig.Enabled {
+				outputText := relayInfo.OutputResponseText.String()
+				if outputText != "" {
+					enabledTypes := setting.GetEnabledPIITypes()
+					if len(enabledTypes) > 0 {
+						findings := service.CheckPIIText(outputText, enabledTypes)
+						if len(findings) > 0 {
+							piiTypes := make([]string, 0, len(findings))
+							for _, f := range findings {
+								piiTypes = append(piiTypes, f.Type)
+							}
+							logger.LogWarn(c, fmt.Sprintf("PII detected in output: %s", strings.Join(piiTypes, ", ")))
+
+							if setting.PIIConfig.AuditLogEnabled {
+								userId := c.GetInt("id")
+								username := c.GetString("username")
+								userGroup := c.GetString("group")
+								requestId := c.GetString(common.RequestIdKey)
+								tokenName := c.GetString("token_name")
+								modelName := relayInfo.OriginModelName
+								needRecordIp := false
+								if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
+									needRecordIp = true
+								}
+								auditDetail := model.AuditLogDetail{
+									Direction:      "output",
+									SensitiveWords: piiTypes,
+									Action: func() string {
+										if setting.PIIConfig.OutputAction == "block" {
+											return "blocked"
+										}
+										return "masked"
+									}(),
+									ContentPreview: truncateAndMaskContent(outputText, 200),
+									RuleLevel:      setting.PIIConfig.OutputAction,
+									Category:       "pii",
+								}
+								auditLog := &model.Log{
+									UserId:    userId,
+									Username:  username,
+									CreatedAt: common.GetTimestamp(),
+									Type:      model.LogTypeAudit,
+									Content:   "PII detected in output",
+									TokenName: tokenName,
+									ModelName: modelName,
+									Group:     userGroup,
+									Ip: func() string {
+										if needRecordIp {
+											return c.ClientIP()
+										}
+										return ""
+									}(),
+									RequestId: requestId,
+								}
+								if detailBytes, err := common.Marshal(auditDetail); err == nil {
+									auditLog.Other = string(detailBytes)
+								}
+								service.RecordAuditLog(auditLog)
+							}
+
+							// block 级别且非流式时阻断
+							if setting.PIIConfig.OutputAction == "block" && !relayInfo.IsStream {
+								newAPIError = types.NewError(errors.New("PII detected in output"), types.ErrorCodeSensitiveWordsDetected)
+								return
+							}
+						}
+					}
+				}
+			}
+
 			return
 		}
 

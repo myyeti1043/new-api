@@ -197,6 +197,18 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
 		}
 
+		// 敏感词规则管理
+		sensitiveRuleRoute := apiRouter.Group("/sensitive/rules")
+		sensitiveRuleRoute.Use(middleware.AdminAuth())
+		{
+			sensitiveRuleRoute.GET("", controller.GetSensitiveRules)
+			sensitiveRuleRoute.POST("", controller.CreateSensitiveRule)
+			sensitiveRuleRoute.PUT("", controller.UpdateSensitiveRule)
+			sensitiveRuleRoute.DELETE("", controller.DeleteSensitiveRule)
+			sensitiveRuleRoute.GET("/export", controller.ExportSensitiveRules)
+			sensitiveRuleRoute.POST("/import", controller.ImportSensitiveRules)
+		}
+
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
 		customOAuthRoute.Use(middleware.RootAuth())
