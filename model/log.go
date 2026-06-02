@@ -64,7 +64,18 @@ const (
 	LogTypeSystem  = 4
 	LogTypeError   = 5
 	LogTypeRefund  = 6
+	LogTypeAudit   = 7
 )
+
+// AuditLogDetail 审计日志详情，存储在 Log.Other 字段（JSON 格式）
+type AuditLogDetail struct {
+	Direction      string   `json:"direction"`       // "input" / "output"
+	SensitiveWords []string `json:"sensitive_words"`  // 命中的敏感词
+	Action         string   `json:"action"`           // "blocked" / "replaced" / "logged"
+	ContentPreview string   `json:"content_preview"`  // 内容预览（截断至 200 字符 + 脱敏）
+	RuleLevel      string   `json:"rule_level"`       // "block" / "warn" / "log"
+	Category       string   `json:"category"`         // 规则类别
+}
 
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
@@ -552,4 +563,69 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 	}
 
 	return total, nil
+}
+
+// GetAuditLogs 查询审计日志（管理员：可查看所有 group）
+func GetAuditLogs(startTimestamp int64, endTimestamp int64, username string, direction string, level string, group string, startIdx int, num int) (logs []*Log, total int64, err error) {
+	tx := LOG_DB.Where("logs.type = ?", LogTypeAudit)
+
+	if startTimestamp != 0 {
+		tx = tx.Where("logs.created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("logs.created_at <= ?", endTimestamp)
+	}
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", username); err != nil {
+		return nil, 0, err
+	}
+	if group != "" {
+		tx = tx.Where("logs."+logGroupCol+" = ?", group)
+	}
+
+	// direction 和 level 存储在 Other JSON 中，使用 LIKE 过滤
+	if direction != "" {
+		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"direction\":\"%s\"%%", direction))
+	}
+	if level != "" {
+		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"rule_level\":\"%s\"%%", level))
+	}
+
+	err = tx.Model(&Log{}).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	return logs, total, err
+}
+
+// GetAuditLogsByUser 查询审计日志（普通用户：只能查看自己 group）
+func GetAuditLogsByUser(userId int, startTimestamp int64, endTimestamp int64, direction string, level string, startIdx int, num int) (logs []*Log, total int64, err error) {
+	// 获取用户的 group
+	userGroup, _ := GetUserGroup(userId, false)
+
+	tx := LOG_DB.Where("logs.type = ?", LogTypeAudit)
+	if userGroup != "" {
+		tx = tx.Where("logs."+logGroupCol+" = ?", userGroup)
+	}
+
+	if startTimestamp != 0 {
+		tx = tx.Where("logs.created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("logs.created_at <= ?", endTimestamp)
+	}
+
+	if direction != "" {
+		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"direction\":\"%s\"%%", direction))
+	}
+	if level != "" {
+		tx = tx.Where("logs.other LIKE ?", fmt.Sprintf("%%\"rule_level\":\"%s\"%%", level))
+	}
+
+	err = tx.Model(&Log{}).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	return logs, total, err
 }

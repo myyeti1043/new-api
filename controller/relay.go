@@ -137,6 +137,40 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		contains, words := service.CheckSensitiveText(meta.CombineText)
 		if contains {
 			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
+
+			// 记录审计日志（异步，不阻塞请求）
+			userId := c.GetInt("id")
+			username := c.GetString("username")
+			userGroup := c.GetString("group")
+			requestId := c.GetString(common.RequestIdKey)
+			tokenName := c.GetString("token_name")
+			modelName := relayInfo.OriginModelName
+			auditDetail := model.AuditLogDetail{
+				Direction:      "input",
+				SensitiveWords: words,
+				Action:         "blocked",
+				ContentPreview: truncateAndMaskContent(meta.CombineText, 200),
+				RuleLevel:      "block",
+				Category:       "custom",
+			}
+			auditLog := &model.Log{
+				UserId:    userId,
+				Username:  username,
+				CreatedAt: common.GetTimestamp(),
+				Type:      model.LogTypeAudit,
+				Content:   fmt.Sprintf("sensitive words detected: %s", strings.Join(words, ", ")),
+				TokenName: tokenName,
+				ModelName: modelName,
+				Group:     userGroup,
+				RequestId: requestId,
+				Other:     common.MapToJsonStr(map[string]interface{}{}),
+			}
+			// 将 auditDetail 序列化到 Other 字段
+			if detailBytes, err := common.Marshal(auditDetail); err == nil {
+				auditLog.Other = string(detailBytes)
+			}
+			service.RecordAuditLog(auditLog)
+
 			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
 			return
 		}
@@ -650,4 +684,38 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError,
 		return false
 	}
 	return true
+}
+
+// truncateAndMaskContent 截断内容并脱敏（用于审计日志预览）
+func truncateAndMaskContent(content string, maxLen int) string {
+	runes := []rune(content)
+	if len(runes) > maxLen {
+		content = string(runes[:maxLen]) + "..."
+	}
+	// 简单脱敏：将连续数字替换为 ****
+	result := strings.Builder{}
+	digitCount := 0
+	for _, r := range content {
+		if r >= '0' && r <= '9' {
+			digitCount++
+		} else {
+			if digitCount > 4 {
+				result.WriteString("****")
+			} else if digitCount > 0 {
+				for i := 0; i < digitCount; i++ {
+					result.WriteByte('*')
+				}
+			}
+			digitCount = 0
+			result.WriteRune(r)
+		}
+	}
+	if digitCount > 4 {
+		result.WriteString("****")
+	} else if digitCount > 0 {
+		for i := 0; i < digitCount; i++ {
+			result.WriteByte('*')
+		}
+	}
+	return result.String()
 }

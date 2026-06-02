@@ -312,6 +312,10 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 
+		auditRoute := apiRouter.Group("/audit")
+		auditRoute.GET("/logs", middleware.AdminAuth(), controller.GetAuditLogs)
+		auditRoute.GET("/logs/self", middleware.UserAuth(), controller.GetAuditLogsSelf)
+
 		dataRoute := apiRouter.Group("/data")
 		dataRoute.GET("/", middleware.AdminAuth(), controller.GetAllQuotaDates)
 		dataRoute.GET("/users", middleware.AdminAuth(), controller.GetQuotaDatesByUser)

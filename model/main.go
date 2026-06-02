@@ -372,6 +372,16 @@ func migrateLOGDB() error {
 	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
 		return err
 	}
+	// 审计日志复合索引：type + created_at + group
+	// 使用 logGroupCol 自动适配 PostgreSQL/MySQL 的 group 列名
+	idxSQL := fmt.Sprintf(
+		"CREATE INDEX IF NOT EXISTS idx_audit_logs ON logs(type, created_at, %s)",
+		logGroupCol,
+	)
+	if err = LOG_DB.Exec(idxSQL).Error; err != nil {
+		common.SysError("failed to create audit log index: " + err.Error())
+		// 索引创建失败不阻塞启动
+	}
 	return nil
 }
 
