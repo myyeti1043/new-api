@@ -1365,6 +1365,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				}
 				if part.Text != "" {
 					responseText.WriteString(part.Text)
+					info.OutputResponseText.WriteString(part.Text)
 				}
 			}
 		}
@@ -1572,6 +1573,11 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	for _, choice := range fullTextResponse.Choices {
+		info.OutputResponseText.WriteString(choice.Message.StringContent())
+	}
 
 	return &usage, nil
 }

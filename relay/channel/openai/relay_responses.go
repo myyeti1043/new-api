@@ -43,6 +43,15 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	for _, output := range responsesResponse.Output {
+		for _, content := range output.Content {
+			if content.Text != "" {
+				info.OutputResponseText.WriteString(content.Text)
+			}
+		}
+	}
+
 	// compute usage
 	usage := dto.Usage{}
 	if responsesResponse.Usage != nil {
@@ -145,6 +154,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	info.OutputResponseText.WriteString(responseTextBuilder.String())
 
 	return usage, nil
 }

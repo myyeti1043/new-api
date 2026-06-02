@@ -889,6 +889,10 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
+
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	info.OutputResponseText.WriteString(claudeInfo.ResponseText.String())
+
 	return claudeInfo.Usage, nil
 }
 
@@ -955,6 +959,10 @@ func ClaudeHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 	if handleErr != nil {
 		return nil, handleErr
 	}
+
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	info.OutputResponseText.WriteString(claudeInfo.ResponseText.String())
+
 	return claudeInfo.Usage, nil
 }
 

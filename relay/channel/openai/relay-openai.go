@@ -186,6 +186,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	info.OutputResponseText.WriteString(responseTextBuilder.String())
+
 	return usage, nil
 }
 
@@ -290,6 +293,11 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	for _, choice := range simpleResponse.Choices {
+		info.OutputResponseText.WriteString(choice.Message.StringContent())
+	}
 
 	return &simpleResponse.Usage, nil
 }
