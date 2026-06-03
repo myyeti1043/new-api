@@ -953,37 +953,53 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError,
 	return true
 }
 
-// truncateAndMaskContent 截断内容并脱敏（用于审计日志预览）
+// truncateAndMaskContent 截断内容并脱敏（用于审计日志预览）。
+//
+// 优先调用 PII 引擎对完整文本做 phone/idcard/bankcard/email/ipv4 脱敏，
+// 再对残余的长数字串做兜底 mask，最后按 maxLen 截断。
 func truncateAndMaskContent(content string, maxLen int) string {
-	runes := []rune(content)
-	if len(runes) > maxLen {
-		content = string(runes[:maxLen]) + "..."
+	masked := content
+	if setting.PIIConfig.Enabled {
+		enabledTypes := setting.GetEnabledPIITypes()
+		if len(enabledTypes) > 0 {
+			if findings := service.CheckPIIText(masked, enabledTypes); len(findings) > 0 {
+				masked = service.MaskPIIText(masked, findings)
+			}
+		}
 	}
-	// 简单脱敏：将连续数字替换为 ****
-	result := strings.Builder{}
+	masked = maskLongDigitRuns(masked)
+	runes := []rune(masked)
+	if maxLen > 0 && len(runes) > maxLen {
+		return string(runes[:maxLen]) + "..."
+	}
+	return masked
+}
+
+// maskLongDigitRuns 把连续 ≥5 位的数字串替换为 ****，用于兜底 PII 引擎未覆盖的"长串数字"场景
+// （例如不在 PII 字典里的随机 ID / 流水号）。
+func maskLongDigitRuns(content string) string {
+	var result strings.Builder
+	result.Grow(len(content))
 	digitCount := 0
+	flushDigits := func() {
+		if digitCount >= 5 {
+			result.WriteString("****")
+		} else {
+			for i := 0; i < digitCount; i++ {
+				result.WriteByte('*')
+			}
+		}
+		digitCount = 0
+	}
 	for _, r := range content {
 		if r >= '0' && r <= '9' {
 			digitCount++
-		} else {
-			if digitCount > 4 {
-				result.WriteString("****")
-			} else if digitCount > 0 {
-				for i := 0; i < digitCount; i++ {
-					result.WriteByte('*')
-				}
-			}
-			digitCount = 0
-			result.WriteRune(r)
+			continue
 		}
+		flushDigits()
+		result.WriteRune(r)
 	}
-	if digitCount > 4 {
-		result.WriteString("****")
-	} else if digitCount > 0 {
-		for i := 0; i < digitCount; i++ {
-			result.WriteByte('*')
-		}
-	}
+	flushDigits()
 	return result.String()
 }
 

@@ -32,7 +32,7 @@ func OaiResponsesCompactionHandler(c *gin.Context, info *relaycommon.RelayInfo, 
 	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
 	if info != nil {
 		// Output 字段是 json.RawMessage，递归提取其中的 text 字段
-		extractTextFromRawJSON(compactResp.Output, info.OutputResponseText)
+		extractTextFromRawJSON(compactResp.Output, &info.OutputResponseText)
 		// 写客户端前执行输出过滤
 		if filterResult := service.ApplyOutputFilter(c, info); filterResult.HasAnyHit() {
 			if filterResult.ShouldBlock {

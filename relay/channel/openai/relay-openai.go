@@ -504,6 +504,61 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						info.InputAudioFormat = common.GetStringIfEmpty(realtimeSession.InputAudioFormat, info.InputAudioFormat)
 						info.OutputAudioFormat = common.GetStringIfEmpty(realtimeSession.OutputAudioFormat, info.OutputAudioFormat)
 					}
+				} else if realtimeEvent.Type == "response.text.delta" || realtimeEvent.Type == "response.audio_transcript.delta" {
+					// 输出侧 PII / 敏感词实时过滤
+					filter := service.ApplyRealtimeDeltaFilter(c, info, realtimeEvent.Delta)
+					if filter.ShouldBlock {
+						errEvent := &dto.RealtimeEvent{
+							EventId: realtimeEvent.EventId,
+							Type:    dto.RealtimeEventTypeError,
+							Error: &types.OpenAIError{
+								Message: filter.BlockReason,
+								Type:    "sensitive_word_blocked",
+								Code:    "sensitive_word_blocked",
+							},
+						}
+						errBytes, mErr := common.Marshal(errEvent)
+						if mErr == nil {
+							_ = helper.WssString(c, clientConn, string(errBytes))
+						}
+						errChan <- fmt.Errorf("realtime output blocked: %s", filter.BlockReason)
+						return
+					}
+					if filter.MaskedDelta != realtimeEvent.Delta {
+						// 改写 delta 并重新序列化
+						realtimeEvent.Delta = filter.MaskedDelta
+						newBytes, mErr := common.Marshal(realtimeEvent)
+						if mErr != nil {
+							errChan <- fmt.Errorf("realtime marshal error: %v", mErr)
+							return
+						}
+						message = newBytes
+					}
+				} else if realtimeEvent.Type == "response.text.done" || realtimeEvent.Type == "response.audio_transcript.done" {
+					// 完整文本事件：用 response 字段里的 text 一次性过 PII 引擎
+					if realtimeEvent.Response != nil {
+						fullText := extractRealtimeResponseText(realtimeEvent.Response)
+						if fullText != "" {
+							filter := service.ApplyRealtimeDeltaFilter(c, info, fullText)
+							if filter.ShouldBlock {
+								errEvent := &dto.RealtimeEvent{
+									EventId: realtimeEvent.EventId,
+									Type:    dto.RealtimeEventTypeError,
+									Error: &types.OpenAIError{
+										Message: filter.BlockReason,
+										Type:    "sensitive_word_blocked",
+										Code:    "sensitive_word_blocked",
+									},
+								}
+								errBytes, mErr := common.Marshal(errEvent)
+								if mErr == nil {
+									_ = helper.WssString(c, clientConn, string(errBytes))
+								}
+								errChan <- fmt.Errorf("realtime output blocked: %s", filter.BlockReason)
+								return
+							}
+						}
+					}
 				} else {
 					textToken, audioToken, err := service.CountTokenRealtime(info, *realtimeEvent, info.UpstreamModelName)
 					if err != nil {
@@ -551,6 +606,43 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	// check usage total tokens, if 0, use local usage
 
 	return nil, sumUsage
+}
+
+// extractRealtimeResponseText 从 RealtimeResponse 中抽取所有 text 片段拼接起来。
+// 兼容 response.output[*].content[*].text / response.output_text 等多种字段布局，
+// 用 common.Unmarshal 直接解 map 数组结构，避免引入新的 DTO 类型。
+func extractRealtimeResponseText(resp *dto.RealtimeResponse) string {
+	if resp == nil {
+		return ""
+	}
+	raw, err := common.Marshal(resp)
+	if err != nil {
+		return ""
+	}
+	var doc map[string]interface{}
+	if err := common.Unmarshal(raw, &doc); err != nil {
+		return ""
+	}
+	return collectTextFromResponseMap(doc)
+}
+
+// collectTextFromResponseMap 递归收集 map 数组中所有名为 "text" 的字符串值。
+func collectTextFromResponseMap(v interface{}) string {
+	var sb strings.Builder
+	switch val := v.(type) {
+	case map[string]interface{}:
+		if t, ok := val["text"].(string); ok && t != "" {
+			sb.WriteString(t)
+		}
+		for _, child := range val {
+			sb.WriteString(collectTextFromResponseMap(child))
+		}
+	case []interface{}:
+		for _, item := range val {
+			sb.WriteString(collectTextFromResponseMap(item))
+		}
+	}
+	return sb.String()
 }
 
 func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.RealtimeUsage, totalUsage *dto.RealtimeUsage) error {

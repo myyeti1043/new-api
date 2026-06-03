@@ -291,3 +291,81 @@ func extractChoiceText(content interface{}) string {
 	}
 	return ""
 }
+
+// RealtimeDeltaFilter 用于 Realtime WebSocket 逐 delta 过滤。
+//  - MaskedDelta: 经过 PII 脱敏后的 delta（首尾可能有差异）；
+//  - ShouldBlock: 累计敏感词/PII 触发阻断，应当向客户端发送 error 事件并停止；
+//  - BlockReason: 阻断原因（用于 error 事件 message 字段）。
+type RealtimeDeltaFilter struct {
+	MaskedDelta string
+	ShouldBlock bool
+	BlockReason string
+}
+
+// ApplyRealtimeDeltaFilter 对 Realtime WebSocket 的一条文本 delta 做 PII / 敏感词检查。
+//
+//  - delta: 来自 `response.text.delta` / `response.audio_transcript.delta` 等事件；
+//  - info:  当前请求的 RelayInfo，OutputResponseText 用于累积；
+//  - 返回:  过滤结果，调用方决定是否改写 delta 或终止连接。
+//
+// 行为约定：
+//  1. 总是把 delta 追加到 info.OutputResponseText（用 masked 后的版本以保证后续
+//     敏感词累计检查看到的是脱敏后的内容，而不是原始 PII 触发假阳性）；
+//  2. PII 配置启用时，delta 走 PII 引擎脱敏，区间由原始 delta 决定；
+//  3. 累计文本命中 block 级敏感词时返回 ShouldBlock=true；
+//  4. PII per-type action=block 时返回 ShouldBlock=true。
+func ApplyRealtimeDeltaFilter(c *gin.Context, info *relaycommon.RelayInfo, delta string) RealtimeDeltaFilter {
+	res := RealtimeDeltaFilter{MaskedDelta: delta}
+	if delta == "" {
+		return res
+	}
+
+	// 1. PII 引擎对 delta 脱敏（区间按 delta 自身计算）
+	if setting.PIIConfig.Enabled {
+		enabledTypes := setting.GetEnabledPIITypes()
+		if len(enabledTypes) > 0 {
+			findings := CheckPIIText(delta, enabledTypes)
+			if len(findings) > 0 {
+				hasMask := false
+				for _, f := range findings {
+					action := setting.GetPIITypeAction(f.Type, "output")
+					switch action {
+					case "block":
+						res.ShouldBlock = true
+						res.BlockReason = fmt.Sprintf("PII type %s blocked", f.Type)
+					case "mask":
+						hasMask = true
+					}
+				}
+				if hasMask && !res.ShouldBlock {
+					res.MaskedDelta = MaskPIIText(delta, findings)
+				}
+			}
+		}
+	}
+
+	if res.ShouldBlock {
+		return res
+	}
+
+	// 2. 把 masked delta 累积到 info
+	if info != nil {
+		info.OutputResponseText.WriteString(res.MaskedDelta)
+		// 3. 对累计文本做敏感词 block 检查
+		if setting.ShouldCheckCompletionSensitive() {
+			hits := CheckSensitiveTextWithLevel(info.OutputResponseText.String(), info.TokenGroup)
+			for _, hit := range hits {
+				if hit.Level == "block" {
+					res.ShouldBlock = true
+					res.BlockReason = fmt.Sprintf("sensitive word %q blocked", hit.Word)
+					break
+				}
+			}
+		}
+	}
+
+	if res.ShouldBlock {
+		logger.LogWarn(c, fmt.Sprintf("realtime output block: %s", res.BlockReason))
+	}
+	return res
+}

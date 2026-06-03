@@ -14,12 +14,6 @@ var CheckSensitiveOnPromptEnabled = true
 
 var CheckSensitiveOnCompletionEnabled = true
 
-// StopOnSensitiveEnabled 如果检测到敏感词，是否立刻停止生成，否则替换敏感词
-var StopOnSensitiveEnabled = true
-
-// StreamCacheQueueLength 流模式缓存队列长度，0表示无缓存
-var StreamCacheQueueLength = 0
-
 // sensitiveMu 保护全局敏感词/规则和 PII 配置的并发读写。
 // 在 controller HTTP handler（写）和 relay 请求（读）路径上必须加锁。
 var sensitiveMu sync.RWMutex
