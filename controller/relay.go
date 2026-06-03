@@ -127,7 +127,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
 	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needCountToken {
+	if needSensitiveCheck || needCountToken || setting.PIIConfig.Enabled {
 		meta = request.GetTokenCountMeta()
 	} else {
 		meta = fastTokenCountMetaForPricing(request)
@@ -209,11 +209,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}
 
-	// 输入端 PII 检查
+	// 输入端 PII 检查（独立于敏感词检查和 token 计数）
 	if setting.PIIConfig.Enabled && meta != nil && meta.CombineText != "" {
 		enabledTypes := setting.GetEnabledPIITypes()
 		if len(enabledTypes) > 0 {
-			findings := service.CheckPIIText(meta.CombineText, enabledTypes)
+			// 使用 per-type action 处理
+			shouldBlock, shouldMask, _, findings := service.ApplyInputPIIFilter(meta.CombineText)
 			if len(findings) > 0 {
 				// 记录审计日志
 				piiTypes := make([]string, 0, len(findings))
@@ -221,6 +222,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					piiTypes = append(piiTypes, f.Type)
 				}
 				logger.LogWarn(c, fmt.Sprintf("PII detected in input: %s", strings.Join(piiTypes, ", ")))
+
+				// 决定最终 action 描述
+				actionDesc := "log"
+				if shouldBlock {
+					actionDesc = "blocked"
+				} else if shouldMask {
+					actionDesc = "masked"
+				}
 
 				if setting.PIIConfig.AuditLogEnabled {
 					userId := c.GetInt("id")
@@ -236,14 +245,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					auditDetail := model.AuditLogDetail{
 						Direction:      "input",
 						SensitiveWords: piiTypes,
-						Action: func() string {
-							if setting.PIIConfig.InputAction == "block" {
-								return "blocked"
-							}
-							return "masked"
-						}(),
+						Action:         actionDesc,
 						ContentPreview: truncateAndMaskContent(meta.CombineText, 200),
-						RuleLevel:      setting.PIIConfig.InputAction,
+						RuleLevel:      actionDesc,
 						Category:       "pii",
 					}
 					auditLog := &model.Log{
@@ -270,11 +274,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				}
 
 				// block 级别阻断请求
-				if setting.PIIConfig.InputAction == "block" {
+				if shouldBlock {
 					newAPIError = types.NewError(errors.New("PII detected in input"), types.ErrorCodeSensitiveWordsDetected)
 					return
 				}
-				// mask 级别：将 PII 脱敏后替换请求文本（此处仅记录，实际脱敏在 service 层处理）
+				// mask 级别：实际改写请求体（messages/prompt 等）
+				if shouldMask && len(findings) > 0 {
+					if request == nil {
+						logger.LogWarn(c, "PII mask requested but request is nil")
+					} else if !applyPIIMaskToRequest(request, findings) {
+						logger.LogWarn(c, "PII mask: no text fields were updated on the request")
+					}
+				}
 			}
 		}
 	}
@@ -360,7 +371,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 
-			// 输出端敏感词检查
+			// 输出端敏感词检查（per-rule level）
+			// 注意：对于非流式响应，handler 已经在写客户端前完成了 block/mask 处理；
+			// 此处保留作为防御性兜底，主要处理流式场景（流式仅做审计日志）。
 			if setting.ShouldCheckCompletionSensitive() {
 				outputText := relayInfo.OutputResponseText.String()
 				if outputText != "" {
@@ -430,7 +443,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 						}
 						service.RecordAuditLog(auditLog)
 
-						// 非流式请求且 block 级别时返回错误
+						// 非流式请求且 block 级别时返回错误（handler 通常已先阻断；此处兜底）
 						if hasBlock && !relayInfo.IsStream {
 							newAPIError = types.NewError(errors.New("output sensitive words detected"), types.ErrorCodeSensitiveWordsDetected)
 							return
@@ -440,72 +453,71 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				}
 			}
 
-			// 输出端 PII 检查
+			// 输出端 PII 检查（per-type action）
 			if setting.PIIConfig.Enabled {
 				outputText := relayInfo.OutputResponseText.String()
 				if outputText != "" {
-					enabledTypes := setting.GetEnabledPIITypes()
-					if len(enabledTypes) > 0 {
-						findings := service.CheckPIIText(outputText, enabledTypes)
-						if len(findings) > 0 {
-							piiTypes := make([]string, 0, len(findings))
-							for _, f := range findings {
-								piiTypes = append(piiTypes, f.Type)
-							}
-							logger.LogWarn(c, fmt.Sprintf("PII detected in output: %s", strings.Join(piiTypes, ", ")))
+					shouldBlock, shouldMask, _, findings := computeOutputPIIAction(outputText)
+					_ = shouldMask // 非流式时 handler 已处理 mask
+					if len(findings) > 0 {
+						piiTypes := make([]string, 0, len(findings))
+						for _, f := range findings {
+							piiTypes = append(piiTypes, f.Type)
+						}
+						logger.LogWarn(c, fmt.Sprintf("PII detected in output: %s", strings.Join(piiTypes, ", ")))
 
-							if setting.PIIConfig.AuditLogEnabled {
-								userId := c.GetInt("id")
-								username := c.GetString("username")
-								userGroup := c.GetString("group")
-								requestId := c.GetString(common.RequestIdKey)
-								tokenName := c.GetString("token_name")
-								modelName := relayInfo.OriginModelName
-								needRecordIp := false
-								if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
-									needRecordIp = true
-								}
-								auditDetail := model.AuditLogDetail{
-									Direction:      "output",
-									SensitiveWords: piiTypes,
-									Action: func() string {
-										if setting.PIIConfig.OutputAction == "block" {
-											return "blocked"
-										}
-										return "masked"
-									}(),
-									ContentPreview: truncateAndMaskContent(outputText, 200),
-									RuleLevel:      setting.PIIConfig.OutputAction,
-									Category:       "pii",
-								}
-								auditLog := &model.Log{
-									UserId:    userId,
-									Username:  username,
-									CreatedAt: common.GetTimestamp(),
-									Type:      model.LogTypeAudit,
-									Content:   "PII detected in output",
-									TokenName: tokenName,
-									ModelName: modelName,
-									Group:     userGroup,
-									Ip: func() string {
-										if needRecordIp {
-											return c.ClientIP()
-										}
-										return ""
-									}(),
-									RequestId: requestId,
-								}
-								if detailBytes, err := common.Marshal(auditDetail); err == nil {
-									auditLog.Other = string(detailBytes)
-								}
-								service.RecordAuditLog(auditLog)
+						if setting.PIIConfig.AuditLogEnabled {
+							userId := c.GetInt("id")
+							username := c.GetString("username")
+							userGroup := c.GetString("group")
+							requestId := c.GetString(common.RequestIdKey)
+							tokenName := c.GetString("token_name")
+							modelName := relayInfo.OriginModelName
+							needRecordIp := false
+							if settingMap, ipErr := model.GetUserSetting(userId, false); ipErr == nil && settingMap.RecordIpLog {
+								needRecordIp = true
 							}
+							actionDesc := "log"
+							if shouldBlock {
+								actionDesc = "blocked"
+							} else if shouldMask {
+								actionDesc = "masked"
+							}
+							auditDetail := model.AuditLogDetail{
+								Direction:      "output",
+								SensitiveWords: piiTypes,
+								Action:         actionDesc,
+								ContentPreview: truncateAndMaskContent(outputText, 200),
+								RuleLevel:      actionDesc,
+								Category:       "pii",
+							}
+							auditLog := &model.Log{
+								UserId:    userId,
+								Username:  username,
+								CreatedAt: common.GetTimestamp(),
+								Type:      model.LogTypeAudit,
+								Content:   "PII detected in output",
+								TokenName: tokenName,
+								ModelName: modelName,
+								Group:     userGroup,
+								Ip: func() string {
+									if needRecordIp {
+										return c.ClientIP()
+									}
+									return ""
+								}(),
+								RequestId: requestId,
+							}
+							if detailBytes, err := common.Marshal(auditDetail); err == nil {
+								auditLog.Other = string(detailBytes)
+							}
+							service.RecordAuditLog(auditLog)
+						}
 
-							// block 级别且非流式时阻断
-							if setting.PIIConfig.OutputAction == "block" && !relayInfo.IsStream {
-								newAPIError = types.NewError(errors.New("PII detected in output"), types.ErrorCodeSensitiveWordsDetected)
-								return
-							}
+						// block 级别且非流式时阻断（handler 已先阻断；此处兜底）
+						if shouldBlock && !relayInfo.IsStream {
+							newAPIError = types.NewError(errors.New("PII detected in output"), types.ErrorCodeSensitiveWordsDetected)
+							return
 						}
 					}
 				}
@@ -973,4 +985,111 @@ func truncateAndMaskContent(content string, maxLen int) string {
 		}
 	}
 	return result.String()
+}
+
+// computeOutputPIIAction 根据 setting.PIIConfig 和 per-type action 决定输出侧 PII 的 action。
+// 独立函数，便于在 controller 端和 channel handler 端复用同一逻辑。
+func computeOutputPIIAction(text string) (shouldBlock, shouldMask bool, maskedText string, findings []service.PIIFinding) {
+	enabledTypes := setting.GetEnabledPIITypes()
+	if len(enabledTypes) == 0 {
+		return false, false, text, nil
+	}
+	findings = service.CheckPIIText(text, enabledTypes)
+	if len(findings) == 0 {
+		return false, false, text, nil
+	}
+	for _, f := range findings {
+		action := setting.GetPIITypeAction(f.Type, "output")
+		switch action {
+		case "block":
+			shouldBlock = true
+		case "mask":
+			shouldMask = true
+		}
+	}
+	if shouldMask {
+		maskedText = service.MaskPIIText(text, findings)
+	}
+	return
+}
+
+// applyPIIMaskToRequest 在请求体层对常见 DTO 类型做 PII 脱敏。
+// 返回是否实际修改了请求文本。
+func applyPIIMaskToRequest(request dto.Request, findings []service.PIIFinding) bool {
+	if request == nil || len(findings) == 0 {
+		return false
+	}
+	changed := false
+	switch r := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		masked, _ := service.MaskOpenAIRequestMessages(r.Messages, findings)
+		if masked {
+			changed = true
+		}
+		if r.Prompt != nil {
+			newPrompt, ok := service.MaskOpenAIRequestPrompt(r.Prompt, findings)
+			if ok {
+				r.Prompt = newPrompt
+				changed = true
+			}
+		}
+		if r.Input != nil {
+			newInput, ok := service.MaskOpenAIRequestPrompt(r.Input, findings)
+			if ok {
+				r.Input = newInput
+				changed = true
+			}
+		}
+	case *dto.ClaudeRequest:
+		// 转为 dto.Message 形式做脱敏
+		msgs := make([]dto.Message, 0, len(r.Messages))
+		for _, m := range r.Messages {
+			msgs = append(msgs, dto.Message{
+				Role:    m.Role,
+				Content: m.Content,
+			})
+		}
+		masked, _ := service.MaskOpenAIRequestMessages(msgs, findings)
+		if masked {
+			changed = true
+			for i := range msgs {
+				r.Messages[i].Content = msgs[i].Content
+			}
+		}
+		// System 字段：string 或 []any
+		if r.System != nil {
+			newSystem, ok := service.MaskOpenAIRequestPrompt(r.System, findings)
+			if ok {
+				r.System = newSystem
+				changed = true
+			}
+		}
+	case *dto.OpenAIResponsesRequest:
+		// Input 字段是 json.RawMessage，单独处理
+		if len(r.Input) > 0 {
+			var asAny any
+			if err := common.UnmarshalJsonStr(string(r.Input), &asAny); err == nil && asAny != nil {
+				newInput, ok := service.MaskOpenAIRequestPrompt(asAny, findings)
+				if ok {
+					if buf, err := common.Marshal(newInput); err == nil {
+						r.Input = buf
+						changed = true
+					}
+				}
+			}
+		}
+		if len(r.Instructions) > 0 {
+			var asStr string
+			if err := common.UnmarshalJsonStr(string(r.Instructions), &asStr); err == nil && asStr != "" {
+				masked := service.MaskPIIText(asStr, findings)
+				if masked != asStr {
+					if buf, err := common.Marshal(masked); err == nil {
+						r.Instructions = buf
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	return changed
 }

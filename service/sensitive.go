@@ -45,14 +45,15 @@ func CheckSensitiveText(text string) (bool, []string) {
 
 // SensitiveWordContains 是否包含敏感词，返回是否包含敏感词和敏感词列表
 func SensitiveWordContains(text string) (bool, []string) {
-	if len(setting.SensitiveWords) == 0 {
+	words := setting.GetSensitiveWords()
+	if len(words) == 0 {
 		return false, nil
 	}
 	if len(text) == 0 {
 		return false, nil
 	}
 	checkText := strings.ToLower(text)
-	return AcSearch(checkText, setting.SensitiveWords, true)
+	return AcSearch(checkText, words, true)
 }
 
 // CheckSensitiveTextWithLevel 检测文本中的敏感词，返回命中列表（含 Level）
@@ -66,9 +67,10 @@ func CheckSensitiveTextWithLevel(text string, group string) []SensitiveHit {
 	var hits []SensitiveHit
 
 	// 1. 检查旧版扁平敏感词列表（视为 block 级别）
-	if len(setting.SensitiveWords) > 0 {
-		if ok, words := AcSearch(checkText, setting.SensitiveWords, true); ok {
-			for _, word := range words {
+	words := setting.GetSensitiveWords()
+	if len(words) > 0 {
+		if ok, hits2 := AcSearch(checkText, words, true); ok {
+			for _, word := range hits2 {
 				hits = append(hits, SensitiveHit{
 					Word:  word,
 					Level: "block",
@@ -78,11 +80,8 @@ func CheckSensitiveTextWithLevel(text string, group string) []SensitiveHit {
 	}
 
 	// 2. 检查分级敏感词规则
-	for _, rule := range setting.SensitiveRules {
-		// 分组过滤
-		if group != "" && rule.Group != "" && rule.Group != group {
-			continue
-		}
+	rules := setting.GetSensitiveRulesByGroup(group)
+	for _, rule := range rules {
 		ruleWord := strings.ToLower(rule.Word)
 		if strings.Contains(checkText, ruleWord) {
 			hits = append(hits, SensitiveHit{
@@ -98,11 +97,12 @@ func CheckSensitiveTextWithLevel(text string, group string) []SensitiveHit {
 
 // SensitiveWordReplace 敏感词替换，返回是否包含敏感词和替换后的文本
 func SensitiveWordReplace(text string, returnImmediately bool) (bool, []string, string) {
-	if len(setting.SensitiveWords) == 0 {
+	words := setting.GetSensitiveWords()
+	if len(words) == 0 {
 		return false, nil, text
 	}
 	checkText := strings.ToLower(text)
-	m := getOrBuildAC(setting.SensitiveWords)
+	m := getOrBuildAC(words)
 	hits := m.MultiPatternSearch([]rune(checkText), returnImmediately)
 	if len(hits) > 0 {
 		words := make([]string, 0, len(hits))

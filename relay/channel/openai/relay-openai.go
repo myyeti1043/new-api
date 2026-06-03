@@ -292,12 +292,23 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		responseBody = geminiRespStr
 	}
 
-	service.IOCopyBytesGracefully(c, resp, responseBody)
-
-	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	// 先累积响应文本到 RelayInfo，供输出端敏感词/PII 检查（在写客户端前完成）
 	for _, choice := range simpleResponse.Choices {
 		info.OutputResponseText.WriteString(choice.Message.StringContent())
 	}
+
+	// 写客户端前执行输出过滤（非流式响应可在写前阻断/脱敏）
+	if filterResult := service.ApplyOutputFilter(c, info); filterResult.HasAnyHit() {
+		if filterResult.ShouldBlock {
+			return nil, filterResult.ToAPIError("output sensitive words detected")
+		}
+		if filterResult.ShouldMask {
+			// 重新生成 responseBody，把 choices 的 content 替换成 PIIMaskedText 的对应段
+			responseBody = service.RebuildOpenAIResponseBodyWithMaskedText(simpleResponse, responseBody, filterResult.PIIMaskedText)
+		}
+	}
+
+	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &simpleResponse.Usage, nil
 }

@@ -100,6 +100,22 @@ func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 
+	// 累积响应文本到 RelayInfo，供输出端敏感词/PII 检查
+	if info != nil {
+		for _, choice := range xaiResponse.Choices {
+			info.OutputResponseText.WriteString(choice.Message.StringContent())
+		}
+		// 写客户端前执行输出过滤
+		if filterResult := service.ApplyOutputFilter(c, info); filterResult.HasAnyHit() {
+			if filterResult.ShouldBlock {
+				return nil, filterResult.ToAPIError("output sensitive words detected")
+			}
+			if filterResult.ShouldMask {
+				encodeJson = service.RebuildOpenAIResponseBodyWithMaskedText(xaiResponse, encodeJson, filterResult.PIIMaskedText)
+			}
+		}
+	}
+
 	service.IOCopyBytesGracefully(c, resp, encodeJson)
 
 	return xaiResponse.Usage, nil

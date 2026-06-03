@@ -9,8 +9,27 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 )
 
+// csvFormulaDangerousPrefixes CSV 单元格中可能被 Excel/WPS 解释为公式的字符。
+// 在导出时给这些字符加前缀 ' 以防止公式注入。
+var csvFormulaDangerousPrefixes = []string{"=", "+", "-", "@", "\t", "\r"}
+
+// sanitizeCSVField 防止 CSV 公式注入。
+// 若字段以 = + - @ \t \r 开头，前面加 ' 防止被解释为公式。
+func sanitizeCSVField(s string) string {
+	if s == "" {
+		return s
+	}
+	for _, p := range csvFormulaDangerousPrefixes {
+		if strings.HasPrefix(s, p) {
+			return "'" + s
+		}
+	}
+	return s
+}
+
 // ExportRulesToCSV 将敏感词规则导出为 CSV 格式
 // 列：word, level, category, group
+// 对 word/category 等文本字段做公式注入防护。
 func ExportRulesToCSV() ([]byte, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
@@ -20,8 +39,14 @@ func ExportRulesToCSV() ([]byte, error) {
 		return nil, fmt.Errorf("write csv header: %w", err)
 	}
 
-	for _, rule := range setting.SensitiveRules {
-		record := []string{rule.Word, rule.Level, rule.Category, rule.Group}
+	rules := setting.GetSensitiveRules()
+	for _, rule := range rules {
+		record := []string{
+			sanitizeCSVField(rule.Word),
+			sanitizeCSVField(rule.Level),
+			sanitizeCSVField(rule.Category),
+			sanitizeCSVField(rule.Group),
+		}
 		if err := writer.Write(record); err != nil {
 			return nil, fmt.Errorf("write csv record: %w", err)
 		}
@@ -37,7 +62,8 @@ func ExportRulesToCSV() ([]byte, error) {
 
 // ImportRulesFromCSV 从 CSV 数据导入敏感词规则
 // 返回导入的规则数和错误
-func ImportRulesFromCSV(data []byte, group string) (int, error) {
+// maxRules 限制单次导入规则数量上限，<=0 表示不限制
+func ImportRulesFromCSV(data []byte, group string, maxRules int) (int, error) {
 	reader := csv.NewReader(bytes.NewReader(data))
 	records, err := reader.ReadAll()
 	if err != nil {
@@ -56,6 +82,9 @@ func ImportRulesFromCSV(data []byte, group string) (int, error) {
 
 	imported := 0
 	for i := startIdx; i < len(records); i++ {
+		if maxRules > 0 && imported >= maxRules {
+			return imported, fmt.Errorf("imported rules reach limit %d", maxRules)
+		}
 		record := records[i]
 		if len(record) < 2 {
 			continue
@@ -84,7 +113,10 @@ func ImportRulesFromCSV(data []byte, group string) (int, error) {
 			Category: category,
 			Group:    ruleGroup,
 		}
-		setting.SensitiveRules = append(setting.SensitiveRules, rule)
+		if !setting.AppendSensitiveRule(rule) {
+			// 已存在则跳过，不计入 imported
+			continue
+		}
 		imported++
 	}
 
@@ -92,11 +124,14 @@ func ImportRulesFromCSV(data []byte, group string) (int, error) {
 }
 
 // ImportRulesFromTXT 从 TXT 数据导入敏感词规则（每行一个词，默认 block 级别）
-func ImportRulesFromTXT(data []byte, group string) (int, error) {
+func ImportRulesFromTXT(data []byte, group string, maxRules int) (int, error) {
 	lines := strings.Split(string(data), "\n")
 	imported := 0
 
 	for _, line := range lines {
+		if maxRules > 0 && imported >= maxRules {
+			return imported, fmt.Errorf("imported rules reach limit %d", maxRules)
+		}
 		word := strings.TrimSpace(line)
 		if word == "" || strings.HasPrefix(word, "#") {
 			continue
@@ -108,7 +143,9 @@ func ImportRulesFromTXT(data []byte, group string) (int, error) {
 			Level: "block",
 			Group: group,
 		}
-		setting.SensitiveRules = append(setting.SensitiveRules, rule)
+		if !setting.AppendSensitiveRule(rule) {
+			continue
+		}
 		imported++
 	}
 

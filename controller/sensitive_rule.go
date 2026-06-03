@@ -1,9 +1,9 @@
 package controller
 
 import (
+	"io"
 	"net/http"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -11,21 +11,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 导入文件大小上限（10MB）
+const sensitiveRuleImportMaxBytes int64 = 10 * 1024 * 1024
+
+// 导入规则数量上限
+const sensitiveRuleImportMaxRules = 50000
+
 // GetSensitiveRules 获取所有敏感词规则
 func GetSensitiveRules(c *gin.Context) {
 	group := c.Query("group")
-	rules := setting.SensitiveRules
-
-	// 按 group 过滤
-	if group != "" {
-		var filtered []setting.SensitiveRuleEntry
-		for _, r := range rules {
-			if r.Group == "" || r.Group == group {
-				filtered = append(filtered, r)
-			}
-		}
-		rules = filtered
-	}
+	rules := setting.GetSensitiveRulesByGroup(group)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -58,18 +53,13 @@ func CreateSensitiveRule(c *gin.Context) {
 		rule.Level = "block"
 	}
 
-	// 检查重复（word + group 唯一）
-	for _, r := range setting.SensitiveRules {
-		if r.Word == rule.Word && r.Group == rule.Group {
-			c.JSON(http.StatusConflict, gin.H{
-				"success": false,
-				"message": "rule already exists for this word and group",
-			})
-			return
-		}
+	if !setting.AppendSensitiveRule(rule) {
+		c.JSON(http.StatusConflict, gin.H{
+			"success": false,
+			"message": "rule already exists for this word and group",
+		})
+		return
 	}
-
-	setting.SensitiveRules = append(setting.SensitiveRules, rule)
 
 	// 保存到 options
 	err := model.UpdateOption("SensitiveRules", setting.SensitiveRulesToOptionsJson())
@@ -114,19 +104,7 @@ func UpdateSensitiveRule(c *gin.Context) {
 		updateReq.Level = "block"
 	}
 
-	found := false
-	for i, r := range setting.SensitiveRules {
-		if r.Word == word && r.Group == group {
-			setting.SensitiveRules[i].Level = updateReq.Level
-			if updateReq.Category != "" {
-				setting.SensitiveRules[i].Category = updateReq.Category
-			}
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	if !setting.UpdateSensitiveRule(word, group, updateReq.Level, updateReq.Category) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"message": "rule not found",
@@ -162,25 +140,13 @@ func DeleteSensitiveRule(c *gin.Context) {
 		return
 	}
 
-	found := false
-	var newRules []setting.SensitiveRuleEntry
-	for _, r := range setting.SensitiveRules {
-		if r.Word == word && r.Group == group {
-			found = true
-			continue
-		}
-		newRules = append(newRules, r)
-	}
-
-	if !found {
+	if !setting.DeleteSensitiveRule(word, group) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"message": "rule not found",
 		})
 		return
 	}
-
-	setting.SensitiveRules = newRules
 
 	// 保存到 options
 	err := model.UpdateOption("SensitiveRules", setting.SensitiveRulesToOptionsJson())
@@ -225,6 +191,14 @@ func ImportSensitiveRules(c *gin.Context) {
 		return
 	}
 
+	if file.Size > sensitiveRuleImportMaxBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"success": false,
+			"message": "file too large: limit 10MB",
+		})
+		return
+	}
+
 	f, err := file.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -235,12 +209,19 @@ func ImportSensitiveRules(c *gin.Context) {
 	}
 	defer f.Close()
 
-	data := make([]byte, file.Size)
-	_, err = f.Read(data)
+	// 限制读取大小，防止恶意声明小 file.Size 但通过 multipart 注入
+	data, err := io.ReadAll(io.LimitReader(f, sensitiveRuleImportMaxBytes+1))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": "failed to read file: " + err.Error(),
+		})
+		return
+	}
+	if int64(len(data)) > sensitiveRuleImportMaxBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"success": false,
+			"message": "file too large: limit 10MB",
 		})
 		return
 	}
@@ -250,9 +231,9 @@ func ImportSensitiveRules(c *gin.Context) {
 	var imported int
 	filename := file.Filename
 	if len(filename) >= 4 && filename[len(filename)-4:] == ".csv" {
-		imported, err = service.ImportRulesFromCSV(data, group)
+		imported, err = service.ImportRulesFromCSV(data, group, sensitiveRuleImportMaxRules)
 	} else {
-		imported, err = service.ImportRulesFromTXT(data, group)
+		imported, err = service.ImportRulesFromTXT(data, group, sensitiveRuleImportMaxRules)
 	}
 
 	if err != nil {
