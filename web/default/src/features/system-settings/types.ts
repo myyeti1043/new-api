@@ -317,13 +317,10 @@ export type SecuritySettings = {
   CheckSensitiveOnPromptEnabled: boolean
   CheckSensitiveOnCompletionEnabled: boolean
   SensitiveWords: string
-  PIIConfig?: {
-    enabled: boolean
-    input_action: string
-    output_action: string
-    audit_log_enabled: boolean
-    types: Record<string, { enabled: boolean; action: string }>
-  }
+  // Stored as a JSON string in the Options table; consumers must JSON.parse
+  // before use. Declared as `string` so SecuritySettings remains compatible
+  // with getOptionValue's Record<string, string | number | boolean | ...> shape.
+  PIIConfig?: string
   'fetch_setting.enable_ssrf_protection': boolean
   'fetch_setting.allow_private_ip': boolean
   'fetch_setting.domain_filter_mode': boolean

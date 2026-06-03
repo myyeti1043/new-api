@@ -64,25 +64,37 @@ const SECURITY_SECTIONS = [
   {
     id: 'pii-config',
     titleKey: 'PII Detection',
-    build: (settings: SecuritySettings) => (
-      <PIIConfigSection
-        defaultValues={
-          settings.PIIConfig || {
-            enabled: false,
-            input_action: 'mask',
-            output_action: 'mask',
-            audit_log_enabled: true,
-            types: {
-              phone: { enabled: true, action: 'mask' },
-              idcard: { enabled: true, action: 'mask' },
-              bankcard: { enabled: true, action: 'mask' },
-              email: { enabled: false, action: 'log' },
-              ipv4: { enabled: false, action: 'log' },
-            },
+    build: (settings: SecuritySettings) => {
+      // PIIConfig is stored as a JSON string in the Options table; parse it
+      // defensively and fall back to sensible defaults on missing/invalid input.
+      const PII_DEFAULTS = {
+        enabled: false,
+        input_action: 'mask',
+        output_action: 'mask',
+        audit_log_enabled: true,
+        types: {
+          phone: { enabled: true, action: 'mask' },
+          idcard: { enabled: true, action: 'mask' },
+          bankcard: { enabled: true, action: 'mask' },
+          email: { enabled: false, action: 'log' },
+          ipv4: { enabled: false, action: 'log' },
+        },
+      } as const
+      let parsed: typeof PII_DEFAULTS = PII_DEFAULTS
+      if (settings.PIIConfig) {
+        try {
+          const raw = JSON.parse(settings.PIIConfig) as Partial<typeof PII_DEFAULTS>
+          parsed = {
+            ...PII_DEFAULTS,
+            ...raw,
+            types: { ...PII_DEFAULTS.types, ...(raw.types ?? {}) },
           }
+        } catch {
+          parsed = PII_DEFAULTS
         }
-      />
-    ),
+      }
+      return <PIIConfigSection defaultValues={parsed} />
+    },
   },
   {
     id: 'ssrf',

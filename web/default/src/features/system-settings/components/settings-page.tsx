@@ -25,7 +25,10 @@ import type { SystemOption } from '../types'
 import { SettingsPageProvider } from './settings-page-context'
 
 type SettingsPageProps<
-  TSettings extends Record<string, unknown>,
+  // Must match getOptionValue's constraint so the page can hand `defaultSettings`
+  // to the option loader without a cast. If you need to support a new value
+  // type (e.g. nested objects), extend both this and the hook constraint.
+  TSettings extends Record<string, string | number | boolean | unknown[]>,
   TSectionId extends string,
   TExtraArgs extends unknown[] = [],
 > = {
@@ -93,7 +96,8 @@ function SettingsPageFrame(props: SettingsPageFrameProps) {
  * Handles loading state, data fetching, and section rendering
  */
 export function SettingsPage<
-  TSettings extends Record<string, unknown>,
+  // Must match the constraint in SettingsPageProps below.
+  TSettings extends Record<string, string | number | boolean | unknown[]>,
   TSectionId extends string,
   TExtraArgs extends unknown[] = [],
 >({

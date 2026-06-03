@@ -350,7 +350,7 @@ export function SensitiveRuleEditor() {
                 <Select
                   value={formData.level}
                   onValueChange={(v) =>
-                    setFormData({ ...formData, level: v })
+                    v && setFormData({ ...formData, level: v })
                   }
                 >
                   <SelectTrigger>

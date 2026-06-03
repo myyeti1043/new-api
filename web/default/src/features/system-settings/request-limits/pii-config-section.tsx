@@ -256,7 +256,7 @@ export function PIIConfigSection({ defaultValues }: PIIConfigSectionProps) {
                     <Select
                       value={typeConfig?.action || 'mask'}
                       onValueChange={(v) =>
-                        handleTypeActionChange(piiType.key, v)
+                        v && handleTypeActionChange(piiType.key, v)
                       }
                     >
                       <SelectTrigger className='w-[100px]'>
