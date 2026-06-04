@@ -34,6 +34,7 @@ const defaultSecuritySettings: SecuritySettings = {
   CheckSensitiveOnPromptEnabled: false,
   CheckSensitiveOnCompletionEnabled: false,
   SensitiveWords: '',
+  PIIConfig: '',
   'fetch_setting.enable_ssrf_protection': true,
   'fetch_setting.allow_private_ip': false,
   'fetch_setting.domain_filter_mode': false,
