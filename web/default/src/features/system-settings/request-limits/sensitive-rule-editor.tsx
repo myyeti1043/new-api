@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -62,8 +63,8 @@ export function SensitiveRuleEditor() {
   const { data: rules, isLoading } = useQuery<SensitiveRule[]>({
     queryKey: ['sensitive-rules'],
     queryFn: async () => {
-      const res = await fetch('/api/sensitive/rules')
-      const json = await res.json()
+      const res = await api.get('/api/sensitive/rules')
+      const json = res.data
       if (!json.success) throw new Error(json.message)
       return json.data || []
     },
@@ -72,12 +73,8 @@ export function SensitiveRuleEditor() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (rule: SensitiveRuleFormData) => {
-      const res = await fetch('/api/sensitive/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rule),
-      })
-      const json = await res.json()
+      const res = await api.post('/api/sensitive/rules', rule)
+      const json = res.data
       if (!json.success) throw new Error(json.message)
       return json
     },
@@ -104,12 +101,8 @@ export function SensitiveRuleEditor() {
         word: oldRule.word,
         group: oldRule.group || '',
       })
-      const res = await fetch(`/api/sensitive/rules?${params}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      const json = await res.json()
+      const res = await api.put(`/api/sensitive/rules?${params}`, data)
+      const json = res.data
       if (!json.success) throw new Error(json.message)
       return json
     },
@@ -131,10 +124,8 @@ export function SensitiveRuleEditor() {
         word: rule.word,
         group: rule.group || '',
       })
-      const res = await fetch(`/api/sensitive/rules?${params}`, {
-        method: 'DELETE',
-      })
-      const json = await res.json()
+      const res = await api.delete(`/api/sensitive/rules?${params}`)
+      const json = res.data
       if (!json.success) throw new Error(json.message)
       return json
     },
@@ -152,11 +143,8 @@ export function SensitiveRuleEditor() {
     mutationFn: async (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      const res = await fetch('/api/sensitive/rules/import', {
-        method: 'POST',
-        body: formData,
-      })
-      const json = await res.json()
+      const res = await api.post('/api/sensitive/rules/import', formData)
+      const json = res.data
       if (!json.success) throw new Error(json.message)
       return json
     },
