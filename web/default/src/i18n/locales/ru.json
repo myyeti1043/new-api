@@ -1778,7 +1778,7 @@
     "footer.columns.related.links.oneApi": "Один API",
     "footer.columns.related.title": "Связанные проекты",
     "footer.defaultCopyright": "Все права защищены.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Все права защищены. Разработано участниками проекта.",
+    "footer.newapi.projectAttributionSuffix": "Все права защищены. Разработано участниками проекта.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Для каналов, добавленных после 10 мая 2025 г., не нужно удалять \".\" из имён моделей при развёртывании",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Для частных развертываний, формат: https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "Принудительно возвращать синтаксически корректный JSON",
@@ -4598,6 +4598,16 @@
     "{{count}} FAQs deleted. Click \"Save Settings\" to apply.": "Удалено {{count}} часто задаваемых вопросов. Нажмите «Сохранить настройки», чтобы применить.",
     "{{count}} announcements deleted. Click \"Save Settings\" to apply.": "Удалено {{count}} объявлений. Нажмите «Сохранить настройки», чтобы применить.",
     "{{count}} groups deleted. Click \"Save Settings\" to apply.": "Удалено {{count}} групп. Нажмите «Сохранить настройки», чтобы применить.",
-    "{{count}} model(s)": "{{count}} модель(ей)"
+    "{{count}} model(s)": "{{count}} модель(ей)",
+    "Phone Number": "Номер телефона",
+    "Chinese mobile numbers (11 digits)": "Китайские мобильные номера (11 цифр)",
+    "ID Card": "Удостоверение личности",
+    "18-digit Chinese national ID": "18-значный национальный ID Китая",
+    "Bank Card": "Банковская карта",
+    "16-19 digit bank card numbers": "Номера банковских карт (16-19 цифр)",
+    "Email addresses": "Адреса электронной почты",
+    "IPv4": "IPv4",
+    "IPv4 addresses": "IPv4-адреса",
+    "Save PII config": "Сохранить конфиг PII"
   }
 }

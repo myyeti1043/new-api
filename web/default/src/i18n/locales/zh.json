@@ -1778,7 +1778,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相关项目",
     "footer.defaultCopyright": "版权所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "强制返回语法合法的 JSON",
@@ -4598,6 +4598,16 @@
     "{{count}} FAQs deleted. Click \"Save Settings\" to apply.": "已删除 {{count}} 条常见问题。点击「保存设置」以应用。",
     "{{count}} announcements deleted. Click \"Save Settings\" to apply.": "已删除 {{count}} 条公告。点击「保存设置」以应用。",
     "{{count}} groups deleted. Click \"Save Settings\" to apply.": "已删除 {{count}} 个分组。点击「保存设置」以应用。",
-    "{{count}} model(s)": "{{count}} 个模型"
+    "{{count}} model(s)": "{{count}} 个模型",
+    "Phone Number": "手机号码",
+    "Chinese mobile numbers (11 digits)": "中国手机号码（11位）",
+    "ID Card": "身份证",
+    "18-digit Chinese national ID": "18位中国居民身份证号",
+    "Bank Card": "银行卡",
+    "16-19 digit bank card numbers": "16-19位银行卡号",
+    "Email addresses": "邮箱地址",
+    "IPv4": "IPv4",
+    "IPv4 addresses": "IPv4 地址",
+    "Save PII config": "保存 PII 配置"
   }
 }

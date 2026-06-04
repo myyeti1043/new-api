@@ -1778,7 +1778,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Projets liés",
     "footer.defaultCopyright": "Tous droits réservés.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
+    "footer.newapi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Pour les canaux ajoutés après le 10 mai 2025, pas besoin de supprimer \".\" des noms de modèles lors du déploiement",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Pour les déploiements privés, format : https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "Imposer une réponse JSON syntaxiquement valide",
@@ -4598,6 +4598,16 @@
     "{{count}} FAQs deleted. Click \"Save Settings\" to apply.": "{{count}} FAQ supprimées. Cliquez sur « Enregistrer les paramètres » pour appliquer.",
     "{{count}} announcements deleted. Click \"Save Settings\" to apply.": "{{count}} annonces supprimées. Cliquez sur « Enregistrer les paramètres » pour appliquer.",
     "{{count}} groups deleted. Click \"Save Settings\" to apply.": "{{count}} groupes supprimés. Cliquez sur « Enregistrer les paramètres » pour appliquer.",
-    "{{count}} model(s)": "{{count}} modèle(s)"
+    "{{count}} model(s)": "{{count}} modèle(s)",
+    "Phone Number": "Numéro de téléphone",
+    "Chinese mobile numbers (11 digits)": "Numéros de mobile chinois (11 chiffres)",
+    "ID Card": "Carte d'identité",
+    "18-digit Chinese national ID": "Numéro d'identité national chinois à 18 chiffres",
+    "Bank Card": "Carte bancaire",
+    "16-19 digit bank card numbers": "Numéros de carte bancaire à 16-19 chiffres",
+    "Email addresses": "Adresses e-mail",
+    "IPv4": "IPv4",
+    "IPv4 addresses": "Adresses IPv4",
+    "Save PII config": "Enregistrer la config PII"
   }
 }
