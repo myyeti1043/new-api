@@ -24,6 +24,7 @@ import {
   getCoreRowModel,
   type ColumnDef,
 } from '@tanstack/react-table'
+import { Eye, EyeOff } from 'lucide-react'
 import { DataTablePage } from '@/components/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { getAuditLogs } from '../api'
 import type { AuditLog, AuditLogDetail, ParsedAuditLog } from '../types'
 import { useAuditLogsContext } from './audit-logs-provider'
@@ -156,6 +162,7 @@ function DetailDialog({
 
 export function AuditLogsTable() {
   const { t } = useTranslation()
+  const { sensitiveVisible, setSensitiveVisible } = useAuditLogsContext()
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
   const [selectedLog, setSelectedLog] = useState<ParsedAuditLog | null>(null)
@@ -263,6 +270,26 @@ export function AuditLogsTable() {
 
   return (
     <>
+      <div className='mb-2 flex justify-end'>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='ghost'
+                size='icon'
+                onClick={() => setSensitiveVisible(!sensitiveVisible)}
+                aria-label={sensitiveVisible ? t('Hide') : t('Show')}
+                className='text-muted-foreground hover:text-foreground size-7'
+              />
+            }
+          >
+            {sensitiveVisible ? <Eye /> : <EyeOff />}
+          </TooltipTrigger>
+          <TooltipContent>
+            {sensitiveVisible ? t('Hide') : t('Show')}
+          </TooltipContent>
+        </Tooltip>
+      </div>
       <DataTablePage
         table={table}
         columns={columns}
